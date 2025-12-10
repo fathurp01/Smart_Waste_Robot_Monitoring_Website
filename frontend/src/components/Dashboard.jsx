@@ -29,19 +29,22 @@ const CircularProgress = ({ percentage, status }) => {
     <div className="relative w-80 h-80 flex items-center justify-center">
       {/* Background circle */}
       <svg className="transform -rotate-90 w-80 h-80">
+        {/* Background track */}
         <circle
           cx="160"
           cy="160"
           r={radius}
-          stroke="#f3f4f6"
+          stroke="rgba(0, 0, 0, 0.05)"
           strokeWidth="20"
           fill="none"
         />
+        
+        {/* Progress circle */}
         <motion.circle
           cx="160"
           cy="160"
           r={radius}
-          stroke={getStrokeColor()}
+          stroke="rgba(255, 255, 255, 0.3)"
           strokeWidth="20"
           fill="none"
           strokeLinecap="round"
@@ -50,7 +53,7 @@ const CircularProgress = ({ percentage, status }) => {
           animate={{ strokeDashoffset }}
           transition={{ duration: 1.5, ease: "easeInOut" }}
           style={{
-            filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))'
+            filter: 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.1))'
           }}
         />
       </svg>
