@@ -34,7 +34,7 @@ const CircularProgress = ({ percentage, status }) => {
           cx="160"
           cy="160"
           r={radius}
-          stroke="rgba(0, 0, 0, 0.05)"
+          stroke="rgba(0, 0, 0, 0.1)"
           strokeWidth="20"
           fill="none"
         />
@@ -44,7 +44,7 @@ const CircularProgress = ({ percentage, status }) => {
           cx="160"
           cy="160"
           r={radius}
-          stroke="rgba(255, 255, 255, 0.3)"
+          stroke={getStrokeColor()}
           strokeWidth="20"
           fill="none"
           strokeLinecap="round"
@@ -53,7 +53,7 @@ const CircularProgress = ({ percentage, status }) => {
           animate={{ strokeDashoffset }}
           transition={{ duration: 1.5, ease: "easeInOut" }}
           style={{
-            filter: 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.1))'
+            filter: `drop-shadow(0 4px 12px ${getStrokeColor()}40)`
           }}
         />
       </svg>
