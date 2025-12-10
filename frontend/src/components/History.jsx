@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Filter, Download, RefreshCw, TrendingUp, AlertTriangle } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
 
 export default function History() {
   const [historyData, setHistoryData] = useState([]);

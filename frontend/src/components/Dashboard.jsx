@@ -181,6 +181,10 @@ const HistoryLog = ({ history }) => {
  */
 const Dashboard = ({ sensorData, isConnected, history }) => {
   const { capacity = 0, status = 'UNKNOWN', distance = 0 } = sensorData;
+  
+  // Convert to numbers safely
+  const distanceNum = Number(distance) || 0;
+  const capacityNum = Number(capacity) || 0;
 
   return (
     <div className="space-y-6">
@@ -193,7 +197,7 @@ const Dashboard = ({ sensorData, isConnected, history }) => {
         <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
           {/* Circular Progress */}
           <div className="shrink-0">
-            <CircularProgress percentage={capacity} status={status} />
+            <CircularProgress percentage={capacityNum} status={status} />
           </div>
 
           {/* Info Cards Grid */}
@@ -201,20 +205,20 @@ const Dashboard = ({ sensorData, isConnected, history }) => {
             <InfoCard
               icon={Trash2}
               label="Current Capacity"
-              value={`${Math.round(capacity)}%`}
+              value={`${Math.round(capacityNum)}%`}
               color="primary"
             />
             <InfoCard
               icon={TrendingUp}
               label="Sensor Distance"
-              value={`${distance.toFixed(1)} cm`}
+              value={`${distanceNum.toFixed(1)} cm`}
               color="blue"
             />
             <InfoCard
               icon={Clock}
               label="Status"
               value={status.replace('_', ' ')}
-              color={capacity >= 80 ? 'orange' : 'primary'}
+              color={capacityNum >= 80 ? 'orange' : 'primary'}
             />
             <InfoCard
               icon={Trash2}
