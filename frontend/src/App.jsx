@@ -17,7 +17,7 @@ function App() {
   const [sensorData, setSensorData] = useState({
     distance: 0,
     capacity: 0,
-    status: 'UNKNOWN',
+    status: 'KOSONG',
     timestamp: null,
     robotOnline: false
   });
@@ -249,13 +249,6 @@ function Header({ isConnected }) {
                   Riwayat
                 </Link>
               </nav>
-
-              <div className="flex items-center gap-2 pl-6 border-l border-gray-200">
-                <Activity className={`w-5 h-5 ${isConnected ? 'text-primary-500' : 'text-red-500'}`} />
-                <span className={`text-sm font-medium ${isConnected ? 'text-primary-600' : 'text-red-600'}`}>
-                  {isConnected ? 'Live' : 'Offline'}
-                </span>
-              </div>
             </div>
           </div>
         </div>

@@ -44,12 +44,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #22c55e;
+  background: #adadadff;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #16a34a;
+  background: #8e8e8e6d;
 }
 
 /* Smooth transitions for all elements */
