@@ -42,6 +42,11 @@ function App() {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10,
+      transports: ['websocket', 'polling'],
+      upgrade: true,
+      rememberUpgrade: true,
+      timeout: 20000,
+      forceNew: true
     });
 
     // Connection established

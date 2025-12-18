@@ -1,16 +1,14 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Trash2, TrendingUp, Clock } from 'lucide-react';
+import { Trash2, TrendingUp, Clock, BarChart3 } from 'lucide-react';
 
-/**
- * CircularProgress Component
- * A beautiful circular gauge showing waste capacity
- */
+const API_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+
 const CircularProgress = ({ percentage, status }) => {
   const radius = 120;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
-  // Color based on capacity level
   const getColor = () => {
     if (percentage >= 100) return 'text-red-500';
     if (percentage >= 80) return 'text-orange-500';
@@ -27,9 +25,7 @@ const CircularProgress = ({ percentage, status }) => {
 
   return (
     <div className="relative w-80 h-80 flex items-center justify-center">
-      {/* Background circle */}
       <svg className="transform -rotate-90 w-80 h-80">
-        {/* Background track */}
         <circle
           cx="160"
           cy="160"
@@ -39,7 +35,6 @@ const CircularProgress = ({ percentage, status }) => {
           fill="none"
         />
         
-        {/* Progress circle */}
         <motion.circle
           cx="160"
           cy="160"
@@ -58,7 +53,6 @@ const CircularProgress = ({ percentage, status }) => {
         />
       </svg>
 
-      {/* Center content */}
       <div className="absolute flex flex-col items-center justify-center">
         <motion.div
           initial={{ scale: 0 }}
@@ -86,10 +80,6 @@ const CircularProgress = ({ percentage, status }) => {
   );
 };
 
-/**
- * InfoCard Component
- * Displays key metrics
- */
 const InfoCard = ({ icon: Icon, label, value, color = 'primary' }) => {
   const colorClasses = {
     primary: 'bg-primary-100 text-primary-600',
@@ -118,11 +108,20 @@ const InfoCard = ({ icon: Icon, label, value, color = 'primary' }) => {
   );
 };
 
-/**
- * HistoryLog Component
- * Shows recent status changes
- */
-const HistoryLog = ({ history }) => {
+const DailyVolumeChart = ({ data }) => {
+  if (!data || data.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.4 }}
+        className="bg-white rounded-2xl shadow-soft p-6 border border-gray-100 text-center text-gray-500"
+      >
+        Memuat data grafik...
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -130,77 +129,122 @@ const HistoryLog = ({ history }) => {
       transition={{ duration: 0.5, delay: 0.4 }}
       className="bg-white rounded-2xl shadow-soft p-6 border border-gray-100"
     >
-      <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-        <Clock className="w-5 h-5 text-primary-600" />
-        Recent Activity
+      <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+        <BarChart3 className="w-5 h-5 text-primary-600" />
+        Grafik Volume Sampah Harian
       </h3>
       
-      <div className="space-y-3 max-h-96 overflow-y-auto">
-        {history.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No activity yet</p>
-        ) : (
-          history.slice().reverse().map((entry, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
-            >
-              <div className={`w-2 h-2 rounded-full mt-2 ${
-                entry.status === 'FULL' ? 'bg-red-500' :
-                entry.status === 'NEARLY_FULL' ? 'bg-orange-500' :
-                entry.status === 'HALF_FULL' ? 'bg-yellow-500' :
-                'bg-primary-500'
-              }`} />
+      <div className="space-y-4">
+        {data.map((day, index) => (
+          <motion.div
+            key={index}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: index * 0.05 }}
+            className="space-y-2"
+          >
+            <div className="flex justify-between text-sm">
+              <span className="font-medium text-gray-700">
+                {new Date(day.date).toLocaleDateString('id-ID', { 
+                  weekday: 'short', 
+                  day: 'numeric', 
+                  month: 'short' 
+                })}
+              </span>
+              <span className="text-gray-600">
+                Rata-rata: {Math.round(day.avg_capacity)}% | Max: {Math.round(day.max_capacity)}%
+              </span>
+            </div>
+            
+            <div className="relative h-8 bg-gray-100 rounded-full overflow-hidden">
+              <div 
+                className="absolute h-full transition-all duration-500 rounded-full"
+                style={{
+                  width: `${(day.avg_capacity / 100) * 100}%`,
+                  background: day.avg_capacity >= 80 
+                    ? 'linear-gradient(90deg, #f97316, #ef4444)' 
+                    : day.avg_capacity >= 50 
+                    ? 'linear-gradient(90deg, #eab308, #f97316)' 
+                    : 'linear-gradient(90deg, #22c55e, #10b981)'
+                }}
+              />
               
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-gray-900">
-                    {entry.status.replace('_', ' ')}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {new Date(entry.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-600">
-                  Capacity: {entry.capacity}% | Distance: {entry.distance}cm
-                </p>
-              </div>
-            </motion.div>
-          ))
-        )}
+              <div 
+                className="absolute h-full w-1 bg-red-600"
+                style={{
+                  left: `${(day.max_capacity / 100) * 100}%`
+                }}
+                title={`Max: ${Math.round(day.max_capacity)}%`}
+              />
+            </div>
+            
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>{day.readings} pembacaan</span>
+              <span>
+                {day.full_count > 0 && `🔴 ${day.full_count}x penuh `}
+                {day.nearly_full_count > 0 && `🟠 ${day.nearly_full_count}x hampir penuh`}
+              </span>
+            </div>
+          </motion.div>
+        ))}
       </div>
     </motion.div>
   );
 };
 
-/**
- * Main Dashboard Component
- * Orchestrates all dashboard elements
- */
 const Dashboard = ({ sensorData, isConnected, history }) => {
+  const [dailyData, setDailyData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
   const { capacity = 0, status = 'UNKNOWN', distance = 0 } = sensorData;
   
-  // Convert to numbers safely
   const distanceNum = Number(distance) || 0;
   const capacityNum = Number(capacity) || 0;
 
+  useEffect(() => {
+    fetchDailyData();
+    const interval = setInterval(fetchDailyData, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchDailyData = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('days', 7);
+
+      const response = await fetch(`${API_URL}/api/history/daily?${params}`, {
+        method: 'GET',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+      });
+      
+      const result = await response.json();
+
+      if (result.success) {
+        setDailyData(result.data);
+      }
+    } catch (error) {
+      console.error('Error fetching daily data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Main Metrics Section */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="bg-linear-to-br from-primary-50 to-emerald-50 rounded-3xl shadow-soft-lg p-8 border border-primary-100"
       >
         <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
-          {/* Circular Progress */}
           <div className="shrink-0">
             <CircularProgress percentage={capacityNum} status={status} />
           </div>
 
-          {/* Info Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full lg:w-auto">
             <InfoCard
               icon={Trash2}
@@ -210,7 +254,7 @@ const Dashboard = ({ sensorData, isConnected, history }) => {
             />
             <InfoCard
               icon={TrendingUp}
-              label="Sensor Distance"
+              label="Distance (Realtime)"
               value={`${distanceNum.toFixed(1)} cm`}
               color="blue"
             />
@@ -223,15 +267,14 @@ const Dashboard = ({ sensorData, isConnected, history }) => {
             <InfoCard
               icon={Trash2}
               label="Connection"
-              value={isConnected ? 'Active' : 'Lost'}
+              value={isConnected ? 'Connected' : 'Disconnected'}
               color={isConnected ? 'primary' : 'orange'}
             />
           </div>
         </div>
       </motion.div>
 
-      {/* History Log */}
-      <HistoryLog history={history} />
+      <DailyVolumeChart data={dailyData} />
     </div>
   );
 };
