@@ -1,13 +1,3 @@
-/**
- * Smart Waste Collection Robot - Backend Server
- * 
- * This server:
- * 1. Connects to MQTT broker to receive sensor data from the robot
- * 2. Uses Socket.io to push real-time updates to the frontend
- * 3. Handles connection status and data transformation
- * 4. Stores sensor data in MySQL database for historical analysis
- */
-
 require('dotenv').config();
 
 const express = require('express');
@@ -21,35 +11,65 @@ const {
   getHistoryData, 
   getStatistics, 
   getLatestData,
+  getDailyVolumeData,
   closeDatabase 
 } = require('./database');
 
-// ========== CONFIGURATION ==========
 const PORT = process.env.PORT || 5000;
-const MQTT_BROKER = process.env.MQTT_BROKER || 'mqtt://test.mosquitto.org';
-const MQTT_TOPIC = process.env.MQTT_TOPIC || 'robot/waste/sensor';
+const MQTT_BROKER = process.env.MQTT_BROKER || 'mqtt://10.78.229.157';
+const MQTT_TOPIC_REALTIME = 'robot/waste/sensor/realtime';
+const MQTT_TOPIC_DB = 'robot/waste/sensor/db';
 
-// ========== EXPRESS & SOCKET.IO SETUP ==========
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: '*', // In production, specify your frontend URL
-    methods: ['GET', 'POST']
-  }
+    origin: '*',
+    methods: ['GET', 'POST'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization']
+  },
+  transports: ['websocket', 'polling'],
+  allowUpgrades: true,
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
-app.use(cors());
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, ngrok-skip-browser-warning');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  
+  next();
+});
+
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
+  credentials: true
+}));
+
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
 app.use(express.json());
 
-// ========== MQTT CLIENT SETUP ==========
 const mqttClient = mqtt.connect(MQTT_BROKER, {
   clientId: `waste-monitor-${Math.random().toString(16).slice(2, 10)}`,
   clean: true,
   reconnectPeriod: 5000,
 });
 
-// ========== STATE TRACKING ==========
 let latestSensorData = {
   distance: null,
   capacity: 0,
@@ -60,12 +80,11 @@ let latestSensorData = {
 
 let connectedClients = 0;
 
-// ========== MQTT EVENT HANDLERS ==========
 mqttClient.on('connect', () => {
   console.log('✅ Connected to MQTT Broker:', MQTT_BROKER);
-  mqttClient.subscribe(MQTT_TOPIC, (err) => {
+  mqttClient.subscribe([MQTT_TOPIC_REALTIME, MQTT_TOPIC_DB], (err) => {
     if (!err) {
-      console.log('📡 Subscribed to topic:', MQTT_TOPIC);
+      console.log('📡 Subscribed to topics:', MQTT_TOPIC_REALTIME, MQTT_TOPIC_DB);
     } else {
       console.error('❌ Subscription error:', err);
     }
@@ -74,27 +93,24 @@ mqttClient.on('connect', () => {
 
 mqttClient.on('message', async (topic, message) => {
   try {
-    // Parse incoming MQTT message
     const data = JSON.parse(message.toString());
-    console.log('📥 Received MQTT data:', data);
+    console.log(`📥 Received from ${topic}:`, data);
 
-    // Transform sensor data
     const processedData = processSensorData(data);
     
-    // Update latest data
-    latestSensorData = processedData;
-
-    // Save to database
-    try {
-      await saveSensorData(processedData);
-      console.log('💾 Data saved to database');
-    } catch (dbError) {
-      console.error('⚠️ Failed to save to database:', dbError.message);
-      // Continue broadcasting even if DB save fails
+    if (topic === MQTT_TOPIC_REALTIME) {
+      latestSensorData = processedData;
+      io.emit('sensorData', processedData);
+      console.log('📤 Realtime data broadcasted to clients');
+    } 
+    else if (topic === MQTT_TOPIC_DB) {
+      try {
+        await saveSensorData(processedData);
+        console.log('💾 Data saved to database');
+      } catch (dbError) {
+        console.error('⚠️ Failed to save to database:', dbError.message);
+      }
     }
-
-    // Broadcast to all connected Socket.io clients
-    io.emit('sensorData', processedData);
     
   } catch (error) {
     console.error('❌ Error processing MQTT message:', error);
@@ -102,9 +118,8 @@ mqttClient.on('message', async (topic, message) => {
 });
 
 mqttClient.on('error', (error) => {
-  // Log error but don't crash server
   console.error('⚠️ MQTT Connection Error:', error.code || error.message);
-  console.log('💡 Server continues in offline mode - use /api/test/sensor for testing');
+  console.log('💡 Server continues in offline mode');
 });
 
 mqttClient.on('reconnect', () => {
@@ -119,34 +134,21 @@ mqttClient.on('close', () => {
   console.log('🔌 MQTT Connection closed');
 });
 
-// ========== DATA PROCESSING LOGIC ==========
-/**
- * Converts ultrasonic sensor distance to waste capacity
- * @param {Object} data - Raw sensor data from robot
- * @returns {Object} - Processed data with capacity percentage
- */
 function processSensorData(data) {
-  // Extract distance (in cm)
   const distance = data.distance || data.value || 0;
   
-  // Configuration: Bin depth
-  // Adjust these values based on your physical bin dimensions
-  const BIN_DEPTH = 30; // cm - empty bin depth
-  const FULL_THRESHOLD = 5; // cm - distance when bin is full
+  const BIN_DEPTH = 24;
+  const FULL_THRESHOLD = 14
   
-  // Calculate capacity percentage
-  // When sensor reads FULL_THRESHOLD or less = 100% full
-  // When sensor reads BIN_DEPTH or more = 0% full
   let capacity = 0;
-  if (distance <= FULL_THRESHOLD) {
+  if (distance <= FULL_THRESHOLD && distance >= 40) {
     capacity = 100;
-  } else if (distance >= BIN_DEPTH) {
+  } else if (distance >= BIN_DEPTH && distance <= 40) {
     capacity = 0;
   } else {
     capacity = Math.round(((BIN_DEPTH - distance) / (BIN_DEPTH - FULL_THRESHOLD)) * 100);
   }
 
-  // Determine status
   let status = 'AVAILABLE';
   if (capacity >= 100) {
     status = 'FULL';
@@ -157,24 +159,21 @@ function processSensorData(data) {
   }
 
   return {
-    distance: Math.round(distance * 10) / 10, // Round to 1 decimal
-    capacity: Math.max(0, Math.min(100, capacity)), // Clamp between 0-100
+    distance: Math.round(distance * 10) / 10,
+    capacity: Math.max(0, Math.min(100, capacity)),
     status,
     timestamp: new Date().toISOString(),
     robotOnline: true
   };
 }
 
-// ========== SOCKET.IO EVENT HANDLERS ==========
 io.on('connection', async (socket) => {
   connectedClients++;
   console.log(`🔌 Client connected (Total: ${connectedClients})`);
 
-  // Send latest data from DATABASE immediately upon connection
   try {
     const latestFromDB = await getLatestData();
     if (latestFromDB) {
-      // Convert database format to frontend format
       const dataToSend = {
         distance: latestFromDB.distance,
         capacity: latestFromDB.capacity,
@@ -185,23 +184,21 @@ io.on('connection', async (socket) => {
       socket.emit('sensorData', dataToSend);
       console.log('📤 Sent latest data from DB to new client');
     } else {
-      // Fallback to memory if DB is empty
       if (latestSensorData.timestamp) {
         socket.emit('sensorData', latestSensorData);
       }
     }
   } catch (error) {
     console.error('⚠️ Error fetching latest from DB:', error.message);
-    // Fallback to memory
     if (latestSensorData.timestamp) {
       socket.emit('sensorData', latestSensorData);
     }
   }
 
-  // Send initial connection status
   socket.emit('connectionStatus', {
     mqttConnected: mqttClient.connected,
-    topic: MQTT_TOPIC
+    topicRealtime: MQTT_TOPIC_REALTIME,
+    topicDb: MQTT_TOPIC_DB
   });
 
   socket.on('disconnect', () => {
@@ -209,7 +206,6 @@ io.on('connection', async (socket) => {
     console.log(`🔌 Client disconnected (Total: ${connectedClients})`);
   });
 
-  // Allow clients to request latest data from DATABASE
   socket.on('requestData', async () => {
     try {
       const latestFromDB = await getLatestData();
@@ -235,7 +231,6 @@ io.on('connection', async (socket) => {
   });
 });
 
-// ========== REST API ENDPOINTS ==========
 app.get('/', (req, res) => {
   res.json({
     message: 'Smart Waste Collection Robot - Monitoring Server',
@@ -243,7 +238,8 @@ app.get('/', (req, res) => {
     mqtt: {
       connected: mqttClient.connected,
       broker: MQTT_BROKER,
-      topic: MQTT_TOPIC
+      topicRealtime: MQTT_TOPIC_REALTIME,
+      topicDb: MQTT_TOPIC_DB
     },
     clients: connectedClients
   });
@@ -251,7 +247,6 @@ app.get('/', (req, res) => {
 
 app.get('/api/status', async (req, res) => {
   try {
-    // Get latest data from database for consistency
     const latestFromDB = await getLatestData();
     const dataToReturn = latestFromDB ? {
       distance: latestFromDB.distance,
@@ -272,7 +267,6 @@ app.get('/api/status', async (req, res) => {
     });
   } catch (error) {
     console.error('⚠️ Error in /api/status:', error.message);
-    // Fallback to memory
     res.json({
       latestData: latestSensorData,
       mqtt: {
@@ -285,7 +279,6 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
-// Endpoint to test/simulate sensor data (for development)
 app.post('/api/test/sensor', async (req, res) => {
   const { distance } = req.body;
   
@@ -296,7 +289,6 @@ app.post('/api/test/sensor', async (req, res) => {
   const testData = processSensorData({ distance });
   latestSensorData = testData;
   
-  // Save test data to database
   try {
     await saveSensorData(testData);
   } catch (dbError) {
@@ -311,8 +303,6 @@ app.post('/api/test/sensor', async (req, res) => {
   });
 });
 
-// ========== HISTORY API ENDPOINTS ==========
-// Get history data with filters and pagination
 app.get('/api/history', async (req, res) => {
   try {
     const {
@@ -349,7 +339,6 @@ app.get('/api/history', async (req, res) => {
   }
 });
 
-// Get statistics
 app.get('/api/history/stats', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -370,7 +359,6 @@ app.get('/api/history/stats', async (req, res) => {
   }
 });
 
-// Get latest data from database
 app.get('/api/history/latest', async (req, res) => {
   try {
     const latest = await getLatestData();
@@ -389,13 +377,34 @@ app.get('/api/history/latest', async (req, res) => {
   }
 });
 
-// ========== SERVER STARTUP ==========
+app.get('/api/history/daily', async (req, res) => {
+  try {
+    const { startDate, endDate, days = 7 } = req.query;
+    
+    const dailyData = await getDailyVolumeData({
+      startDate,
+      endDate,
+      days: parseInt(days)
+    });
+
+    res.json({
+      success: true,
+      data: dailyData
+    });
+  } catch (error) {
+    console.error('❌ Error fetching daily data:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch daily data',
+      message: error.message
+    });
+  }
+});
+
 async function startServer() {
   try {
-    // Initialize database
     await initializeDatabase();
     
-    // Load latest data from database on startup
     try {
       const latestFromDB = await getLatestData();
       if (latestFromDB) {
@@ -413,14 +422,14 @@ async function startServer() {
       console.log('ℹ️ No previous data in database (fresh start)');
     }
     
-    // Start HTTP server
     server.listen(PORT, () => {
       console.log('\n╔════════════════════════════════════════════════╗');
       console.log('║  🤖 Smart Waste Robot Monitoring Server       ║');
       console.log('╚════════════════════════════════════════════════╝');
       console.log(`\n🚀 Server running on port ${PORT}`);
       console.log(`📡 MQTT Broker: ${MQTT_BROKER}`);
-      console.log(`📻 Listening on topic: ${MQTT_TOPIC}`);
+      console.log(`📻 Realtime topic: ${MQTT_TOPIC_REALTIME}`);
+      console.log(`💾 Database topic: ${MQTT_TOPIC_DB}`);
       console.log(`\n💡 API Endpoints:`);
       console.log(`   - GET  http://localhost:${PORT}/`);
       console.log(`   - GET  http://localhost:${PORT}/api/status`);
@@ -428,6 +437,7 @@ async function startServer() {
       console.log(`   - GET  http://localhost:${PORT}/api/history`);
       console.log(`   - GET  http://localhost:${PORT}/api/history/stats`);
       console.log(`   - GET  http://localhost:${PORT}/api/history/latest`);
+      console.log(`   - GET  http://localhost:${PORT}/api/history/daily`);
       console.log('\n');
     });
   } catch (error) {
@@ -438,7 +448,6 @@ async function startServer() {
 
 startServer();
 
-// ========== GRACEFUL SHUTDOWN ==========
 process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down gracefully...');
   

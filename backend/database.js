@@ -233,6 +233,48 @@ async function closeDatabase() {
   }
 }
 
+async function getDailyVolumeData(options = {}) {
+  const { startDate, endDate, days = 7 } = options;
+
+  let query = `
+    SELECT 
+      DATE(created_at) as date,
+      AVG(capacity) as avg_capacity,
+      MAX(capacity) as max_capacity,
+      MIN(capacity) as min_capacity,
+      COUNT(*) as readings,
+      SUM(CASE WHEN status = 'FULL' THEN 1 ELSE 0 END) as full_count,
+      SUM(CASE WHEN status = 'NEARLY_FULL' THEN 1 ELSE 0 END) as nearly_full_count
+    FROM sensor_data
+    WHERE 1=1
+  `;
+
+  const params = [];
+
+  if (startDate) {
+    query += ` AND created_at >= ?`;
+    params.push(startDate);
+  } else {
+    query += ` AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`;
+    params.push(days);
+  }
+
+  if (endDate) {
+    query += ` AND created_at <= ?`;
+    params.push(endDate);
+  }
+
+  query += ` GROUP BY DATE(created_at) ORDER BY date DESC`;
+
+  try {
+    const [rows] = await pool.query(query, params);
+    return rows;
+  } catch (error) {
+    console.error('Error fetching daily volume data:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   initializeDatabase,
   saveSensorData,
@@ -240,5 +282,6 @@ module.exports = {
   getStatistics,
   getLatestData,
   closeDatabase,
+  getDailyVolumeData,
   getPool: () => pool
 };
